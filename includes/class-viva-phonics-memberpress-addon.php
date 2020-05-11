@@ -158,7 +158,10 @@ class Viva_Phonics_Memberpress_Addon {
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );*/
 
 		$this->loader->add_action( 'mepr-product-advanced-metabox', $plugin_admin, 'display_fields' );
-		$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'save_meta' );		
+		$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'save_meta' );
+
+		// high priority because we need memberpress corporate and our extra member price to be saved first
+		$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'create_membership_stripe_product_plan', 9999 );
 
 		$this->loader->add_action( 'init', $plugin_admin, 'regenerated_stripe_plans' );
 
