@@ -609,4 +609,102 @@ class Viva_Phonics_Memberpress_Addon_Admin {
 	}
 
 
+	/**
+	 * Get the Stripe Customer ID
+	 *
+	 * @param  string       $gateway_id The gateway ID
+	 * @return string|false
+	 */
+	public function get_stripe_customer_id($user_id, $gateway_id) {
+		$mepr_options = MeprOptions::fetch();
+		$meta_key = sprintf('_mepr_stripe_customer_id_%s_%s', $gateway_id, $mepr_options->currency_code);
+
+		return get_user_meta($user_id, $meta_key, true);
+	}
+
+
+	public function num_sub_accounts_used( $user_id ) {
+		global $wpdb;
+		$mepr_db = MeprDb::fetch();
+
+		$q = $wpdb->prepare(
+			"
+			SELECT COUNT(DISTINCT user_id)
+			FROM {$wpdb->usermeta}
+			WHERE meta_key=%s
+			AND meta_value=%s
+			",
+			'mpca_corporate_account_id',
+			$user_id
+		);
+
+		return $wpdb->get_var($q);
+	}
+
+
+	public function stripe_charge_parent_member( $event ) {
+
+		$transaction 	= $event->get_data();
+		$user 			= $transaction->user();
+		$product 		= $transaction->product();
+		$mepr_options 	= MeprOptions::fetch();
+		
+
+		$corporate_account_id 	= get_user_meta( $user->ID, 'mpca_corporate_account_id', true);
+		$corporate_account 		= MPCA_Corporate_Account::get_one( $corporate_account_id );
+		$parent_user_id 		= $corporate_account->user_id;
+		$parent_user 			= new MeprUser( $parent_user_id );
+		$parent_sub_id 			= $corporate_account->obj_id;
+		$parent_sub  			= new MeprSubscription( $parent_sub_id );
+		$parent_obj_type 		= $corporate_account->obj_type;
+		$stripe_customer_id 	= $this->get_stripe_customer_id( $parent_user_id, $this->get_meta_gateway_id() );
+		$intent_options 		= array();
+		$sub_account_price 		= get_post_meta( $product->ID, 'mpca_sub_account_price', true) ?: $amount ;
+		$sub_account_amount 	= MeprUtils::is_zero_decimal_currency() ? MeprUtils::format_float($sub_account_price, 0) : MeprUtils::format_float(($sub_account_price * 100), 0);
+
+		$customer               = \Stripe\Customer::retrieve($stripe_customer_id);
+
+		$intent_args = array(
+			'customer'    			=> $stripe_customer_id,
+			"description"   		=> "Additional Member Cost - User Name: ".$user->display_name." - Group Leader: ".$parent_user->display_name." ",
+			'amount'              	=> $sub_account_amount,
+			'confirmation_method' 	=> 'automatic',
+			'confirm'             	=> true,
+			'off_session'		  	=> true,
+			'currency'            	=> strtolower( $mepr_options->currency_code ),
+			'payment_method' 	  	=> $customer->invoice_settings->default_payment_method,
+			'payment_method_types' 	=> ['card'],
+			"metadata"      		=>  array(
+                "email"             =>  $user->user_email,
+                "user_id"           =>  $user->ID,
+                "group_owner_id"    =>  $parent_user->ID,
+                "group_owner_name"  =>  $parent_user->display_name,
+                "membership_id"     =>  $product->ID,
+                "membership"        =>  $product->post_title,
+            )
+		);
+
+		$intent_options['idempotency_key'] = md5( json_encode( $intent_args ) );
+		$intent_options['stripe_account']  = $this->stripe_settings["service_account_id"];
+
+		$intent 		= \Stripe\PaymentIntent::create( $intent_args, $intent_options );
+
+		$plan_id 		= $this->get_plan_id( $product );
+
+
+		$s_subscription = \Stripe\Subscription::retrieve($parent_sub->subscr_id);
+		$s_subscription->prorate = false;
+		$s_subscription->items = array(
+			array(
+				"id"		=> 	$s_subscription->items->data[0]->id,
+				"plan"		=>	$plan_id,
+				"quantity"	=>	$this->num_sub_accounts_used( $corporate_account->id ),
+			)
+		);
+		$s_subscription->save();
+		unset($s_subscription);
+
+	}
+
+
 } // Viva_Phonics_Memberpress_Addon_Admin ends

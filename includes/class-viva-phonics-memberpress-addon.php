@@ -77,6 +77,7 @@ class Viva_Phonics_Memberpress_Addon {
 		$this->load_dependencies();
 		$this->set_locale();
 		$this->define_admin_hooks();
+		$this->define_ld_tweaks_hooks();
 		$this->define_public_hooks();
 
 	}
@@ -117,6 +118,11 @@ class Viva_Phonics_Memberpress_Addon {
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-viva-phonics-memberpress-addon-admin.php';
 
 		/**
+		 * The class responsible for defining all actions that occur in the admin area.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-viva-phonics-memberpress-addon-ld-options.php';
+
+		/**
 		 * The class responsible for defining all actions that occur in the public-facing
 		 * side of the site.
 		 */
@@ -152,7 +158,7 @@ class Viva_Phonics_Memberpress_Addon {
 	 */
 	private function define_admin_hooks() {
 
-		$plugin_admin = new Viva_Phonics_Memberpress_Addon_Admin( $this->get_plugin_name(), $this->get_version() );
+		$plugin_admin 	= new Viva_Phonics_Memberpress_Addon_Admin( $this->get_plugin_name(), $this->get_version() );
 
 		/*$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );*/
@@ -161,10 +167,22 @@ class Viva_Phonics_Memberpress_Addon {
 		$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'save_meta' );
 
 		// high priority because we need memberpress corporate and our extra member price to be saved first
-		$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'create_membership_stripe_product_plan', 9999 );
+		//$this->loader->add_action( 'mepr-membership-save-meta', $plugin_admin, 'create_membership_stripe_product_plan', 9999 );
 
 		$this->loader->add_action( 'init', $plugin_admin, 'regenerated_stripe_plans' );
 
+		$this->loader->add_action( 'mepr-event-sub-account-added', $plugin_admin, 'stripe_charge_parent_member', 999 );
+
+
+	}
+
+
+	public function define_ld_tweaks_hooks() {
+
+		$plugin_ld 		= new Viva_Phonics_Memberpress_Addon_LD_Tweaks( $this->get_plugin_name(), $this->get_version() );
+
+		$this->loader->add_action( 'mepr-event-subscription-created', $plugin_ld, 'subscription_create_ld_group', 999 );
+		$this->loader->add_action( 'mepr-event-sub-account-added', $plugin_ld, 'subscription_add_member_ld_group', 999 );		
 
 	}
 
